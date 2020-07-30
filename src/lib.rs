@@ -31,6 +31,9 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use version_rs;
 
+/// Represents a string which might be a version number for homebrew.
+/// Homebrew has requirments for version strings, so it is not possable
+/// to definitivly parse it.
 #[derive(Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Version {
@@ -38,16 +41,18 @@ pub struct Version {
 }
 
 impl Version {
+    /// Attempts to return a version of the form "N.N.N".
     pub fn parse(&self) -> Option<version_rs::Version> {
         version_rs::Version::from_str(&self.original).ok()
     }
 
+    /// Returns the original version string.
     pub fn original(&self) -> &str {
         &self.original
     }
 }
 
-/// Represents a brew package, which may or may not be installed.
+/// Represents a homebrew package, which may or may not be installed.
 #[derive(Deserialize, Serialize)]
 pub struct Package {
     pub name: String,
@@ -149,6 +154,7 @@ where
 }
 
 impl Package {
+    /// Creates package, filling out struct from the command line toole.
     pub fn new(name: &str) -> Result<Package> {
         let output = Single::new("/usr/local/bin/brew")
             .a("info")
@@ -166,11 +172,11 @@ impl Package {
                 .unwrap_or(Err(Error::PackageNotFound))
         } else {
             test_brew_installed()?;
-            println!("stderr: {}", output.stderr());
             Err(Error::PackageNotFound)
         }
     }
 
+    /// Attempts to install a package, reinstalling a package if it is already installed.
     pub fn install(&self, options: &Options) -> Result<Package> {
         let command = Single::new("brew")
             .a(if self.is_installed() && options.force {
@@ -211,20 +217,29 @@ impl Package {
         }
     }
 
+    /// Check if a package is installed.
     pub fn is_installed(&self) -> bool {
         self.installed.len() != 0
     }
 
+    /// The package options that the package was installed with.
     pub fn install_options(&self) -> Option<&[String]> {
         self.installed
             .first()
             .map(|i: &Installed| i.used_options.as_slice())
     }
 
-    pub fn uninstall(&self) -> Result<Package> {
+    /// uninstalls the package.
+    pub fn uninstall(&self, force: bool, ignore_dependencies: bool) -> Result<Package> {
         let command = Single::new("brew")
             .a("uninstall")
             .a(&self.name)
+            .args(if force { &["--force"] } else { &[] })
+            .args(if ignore_dependencies {
+                &["--ignore-dependencies"]
+            } else {
+                &[]
+            })
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
             .run()?;
         if command.success() {
@@ -236,6 +251,7 @@ impl Package {
     }
 }
 
+/// Update homebrew, synchronizing the homebrew-core and package list.
 pub fn update() -> Result<()> {
     let command = Single::new("brew").a("update").run()?;
     if command.success() {
@@ -246,10 +262,14 @@ pub fn update() -> Result<()> {
     }
 }
 
+/// Return a map of all installed packages.
+/// This is equivalent to
+/// `$ brew info --installed`
 pub fn all_installed() -> Result<HashMap<String, Package>> {
     packages("--installed")
 }
 
+/// For internal use, wrapper to get package info.
 fn packages(arg: &str) -> Result<HashMap<String, Package>> {
     let output = Single::new("brew")
         .a("info")
@@ -257,7 +277,6 @@ fn packages(arg: &str) -> Result<HashMap<String, Package>> {
         .a(arg)
         .a("--analytics")
         .env("HOMEBREW_NO_AUTO_UPDATE", "1")
-        .pipe(Single::new("jq"))
         .run()?;
     if output.success() {
         let v: Vec<Package> = serde_json::from_str(output.stdout())?;
@@ -268,6 +287,9 @@ fn packages(arg: &str) -> Result<HashMap<String, Package>> {
     }
 }
 
+/// Returns a map of all packages in the downloaded homebrew repository.
+/// This is equivalent to
+/// `$ brew info --all`
 pub fn all_packages() -> Result<HashMap<String, Package>> {
     packages("--all")
 }
@@ -385,6 +407,7 @@ pub fn install_homebrew_at(dir: &str) -> Result<()> {
     Ok(())
 }
 
+/// Represents command line options with which to install a package.
 #[derive(Clone)]
 pub struct Options {
     env: BuildEnv,
@@ -404,6 +427,7 @@ pub struct Options {
 }
 
 impl Options {
+    /// Represents no options added.
     pub fn new() -> Self {
         Self {
             env: BuildEnv::None,
@@ -423,69 +447,98 @@ impl Options {
         }
     }
 
+    /// Adds the `--env=std` option.
     pub fn env_std(mut self) -> Self {
         self.env = BuildEnv::Std;
         self
     }
+
+    /// Adds the `env=super` option.
     pub fn env_super(mut self) -> Self {
         self.env = BuildEnv::Super;
         self
     }
+
+    /// Adds the `--ignore-dependencies` flag.
     pub fn ignore_dependencies(mut self) -> Self {
         self.ignore_dependencies = true;
         self
     }
+
+    /// Adds the `--build-from-source` flag.
     pub fn build_from_source(mut self) -> Self {
         self.build_from_source = true;
         self
     }
+
+    /// Adds the `--include-test` flag.
     pub fn include_test(mut self) -> Self {
         self.include_test = true;
         self
     }
+
+    /// Adds the `--force-bottle` flag.
     pub fn force_bottle(mut self) -> Self {
         self.force_bottle = true;
         self
     }
+
+    /// Adds the `--devel` flag.
     pub fn devel(mut self) -> Self {
         self.devel = true;
         self
     }
+
+    /// Adds the `--HEAD` flag.
     pub fn head(mut self) -> Self {
         self.head = true;
         self
     }
+
+    /// Adds the `--keep-tmp` flag.
     pub fn keep_tmp(mut self) -> Self {
         self.keep_tmp = true;
         self
     }
+
+    /// Adds the `--build-bottle` flag.
     pub fn build_bottle(mut self) -> Self {
         self.build_bottle = true;
         self
     }
+
+    /// Adds the `--bottle-arch` flag.
     pub fn bottle_arch(mut self) -> Self {
         self.bottle_arch = true;
         self
     }
 
+    /// Adds the `--force` flag.
     pub fn force(mut self) -> Self {
         self.force = true;
         self
     }
 
+    /// Adds the `--git` flag.
     pub fn git(mut self) -> Self {
         self.git = true;
         self
     }
 
+    /// Adds a flag for the package to use directly.
     pub fn option(mut self, opt: &str) -> Self {
         self.package_options.push(opt.to_string());
         self
     }
 
-    pub fn options(mut self, opts: &[&str]) -> Self {
+    /// Adds an multiple flags for the package to use directly.
+    pub fn options<I, S>(mut self, opts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.package_options
-            .extend(opts.into_iter().map(|s| s.to_string()));
+            .extend(opts.into_iter().map(|s| s.as_ref().to_string()));
         self
     }
 
