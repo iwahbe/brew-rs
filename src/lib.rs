@@ -47,6 +47,7 @@ impl Version {
     }
 }
 
+/// Represents a brew package, which may or may not be installed.
 #[derive(Deserialize, Serialize)]
 pub struct Package {
     pub name: String,
@@ -170,18 +171,13 @@ impl Package {
         }
     }
 
-    pub fn install(&self, options: &[&str], force: bool) -> Result<Package> {
+    pub fn install(&self, options: &Options) -> Result<Package> {
         let command = Single::new("brew")
-            .a(if self.is_installed() && force {
+            .a(if self.is_installed() && options.force {
                 "reinstall"
             } else if self.is_installed() {
-                let arr: Option<Vec<_>> = self
-                    .install_options()
-                    .map(|i| i.iter().map(|s| s.as_str()).collect());
-                if arr
-                    .map(|v| contains::<_, _, &str>(v, options.iter().map(|s| *s)))
-                    .unwrap_or(false)
-                {
+                let opts = self.install_options().unwrap();
+                if contains(opts, options.package_options()) {
                     return Self::new(&self.name);
                 } else {
                     "reinstall"
@@ -189,12 +185,26 @@ impl Package {
             } else {
                 "install"
             })
+            .args(options.brew_options().as_slice())
             .a(&self.name)
-            .args(options)
+            .args(
+                &options
+                    .package_options()
+                    .into_iter()
+                    .map(|f| f.as_str())
+                    .collect::<Vec<_>>(),
+            )
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
             .run()?;
         if command.success() {
-            Ok(Self::new(&self.name)?)
+            let new = Self::new(&self.name)?;
+            if new.is_installed() {
+                Ok(new)
+            } else {
+                Err(Error::InstallFailed(
+                    "Could not detect new install".to_owned(),
+                ))
+            }
         } else {
             test_brew_installed()?;
             Err(Error::InstallFailed(command.stderr().to_owned()))
@@ -328,7 +338,9 @@ pub struct Dependency {
 
 type VersionResult = Version;
 
-fn test_brew_installed() -> Result<()> {
+/// Tests weither homebrew is installed by seeing if "brew --version" returns
+/// successfully.
+pub fn test_brew_installed() -> Result<()> {
     if Single::new("brew")
         .a("--version")
         .env("HOMEBREW_NO_AUTO_UPDATE", "1")
@@ -342,10 +354,15 @@ fn test_brew_installed() -> Result<()> {
     }
 }
 
+/// WARNING: untested
+/// installs the homebrew cli in "usr/local" which is it's recomended install location.
 pub fn install_homebrew() -> Result<()> {
     install_homebrew_at("/usr/local")
 }
 
+/// WARNING: untested
+/// TODO: Test this function
+/// installs the homebrew cli in `dir`.
 pub fn install_homebrew_at(dir: &str) -> Result<()> {
     Single::new("mkdir")
         .a("homebrew")
@@ -366,4 +383,163 @@ pub fn install_homebrew_at(dir: &str) -> Result<()> {
         .run()?;
     test_brew_installed()?;
     Ok(())
+}
+
+#[derive(Clone)]
+pub struct Options {
+    env: BuildEnv,
+    ignore_dependencies: bool,
+    only_dependencies: bool,
+    build_from_source: bool,
+    include_test: bool,
+    force_bottle: bool,
+    devel: bool,
+    head: bool,
+    keep_tmp: bool,
+    build_bottle: bool,
+    bottle_arch: bool,
+    force: bool,
+    git: bool,
+    package_options: Vec<String>,
+}
+
+impl Options {
+    pub fn new() -> Self {
+        Self {
+            env: BuildEnv::None,
+            ignore_dependencies: false,
+            only_dependencies: false,
+            build_from_source: false,
+            include_test: false,
+            force_bottle: false,
+            devel: false,
+            head: false,
+            keep_tmp: false,
+            build_bottle: false,
+            bottle_arch: false,
+            force: false,
+            git: false,
+            package_options: Vec::new(),
+        }
+    }
+
+    pub fn env_std(mut self) -> Self {
+        self.env = BuildEnv::Std;
+        self
+    }
+    pub fn env_super(mut self) -> Self {
+        self.env = BuildEnv::Super;
+        self
+    }
+    pub fn ignore_dependencies(mut self) -> Self {
+        self.ignore_dependencies = true;
+        self
+    }
+    pub fn build_from_source(mut self) -> Self {
+        self.build_from_source = true;
+        self
+    }
+    pub fn include_test(mut self) -> Self {
+        self.include_test = true;
+        self
+    }
+    pub fn force_bottle(mut self) -> Self {
+        self.force_bottle = true;
+        self
+    }
+    pub fn devel(mut self) -> Self {
+        self.devel = true;
+        self
+    }
+    pub fn head(mut self) -> Self {
+        self.head = true;
+        self
+    }
+    pub fn keep_tmp(mut self) -> Self {
+        self.keep_tmp = true;
+        self
+    }
+    pub fn build_bottle(mut self) -> Self {
+        self.build_bottle = true;
+        self
+    }
+    pub fn bottle_arch(mut self) -> Self {
+        self.bottle_arch = true;
+        self
+    }
+
+    pub fn force(mut self) -> Self {
+        self.force = true;
+        self
+    }
+
+    pub fn git(mut self) -> Self {
+        self.git = true;
+        self
+    }
+
+    pub fn option(mut self, opt: &str) -> Self {
+        self.package_options.push(opt.to_string());
+        self
+    }
+
+    pub fn options(mut self, opts: &[&str]) -> Self {
+        self.package_options
+            .extend(opts.into_iter().map(|s| s.to_string()));
+        self
+    }
+
+    fn package_options(&self) -> &Vec<String> {
+        &self.package_options
+    }
+
+    fn brew_options(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        match self.env {
+            BuildEnv::Std => out.push("--env=std"),
+            BuildEnv::Super => out.push("--env=super"),
+            BuildEnv::None => {}
+        }
+        if self.ignore_dependencies {
+            out.push("--ignore-dependencies")
+        }
+        if self.build_from_source {
+            out.push("--build-from-source")
+        }
+        if self.include_test {
+            out.push("--include-test")
+        }
+        if self.force_bottle {
+            out.push("--force-bottle")
+        }
+        if self.devel {
+            out.push("--devel")
+        }
+        if self.head {
+            out.push("--HEAD")
+        }
+        if self.keep_tmp {
+            out.push("--keep-tmp")
+        }
+        if self.build_bottle {
+            out.push("--build-bottle")
+        }
+        if self.bottle_arch {
+            out.push("--bottle-arch")
+        }
+        if self.force {
+            out.push("--force")
+        }
+        if self.git {
+            out.push("--git")
+        }
+        out
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum BuildEnv {
+    Std,
+    Super,
+    None,
 }
