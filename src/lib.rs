@@ -31,10 +31,19 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use version_rs;
 
+fn brew_return(command: command_builder::Output, name: &str) -> Result<Package> {
+    if command.success() {
+        Ok(Package::new(name)?)
+    } else {
+        test_brew_installed()?;
+        Err(Error::UnknownError(command.stderr().to_owned()))
+    }
+}
+
 /// Represents a string which might be a version number for homebrew.
 /// Homebrew has requirments for version strings, so it is not possable
 /// to definitivly parse it.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 pub struct Version {
     original: String,
@@ -53,7 +62,7 @@ impl Version {
 }
 
 /// Represents a homebrew package, which may or may not be installed.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Package {
     pub name: String,
     pub full_name: String,
@@ -84,7 +93,7 @@ pub struct Package {
     pub analytics: Option<Analytics>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 pub enum MapOrString {
     MapStringString(HashMap<String, String>),
@@ -92,14 +101,14 @@ pub enum MapOrString {
     MapStringVecString(HashMap<String, Vec<String>>),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(untagged)]
 pub enum NumOrString {
     Num(u32),
     String(String),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Requirment {
     name: String,
     cask: Option<String>,
@@ -108,7 +117,7 @@ pub struct Requirment {
     contexts: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct BrewOption {
     option: String,
     description: String,
@@ -242,11 +251,34 @@ impl Package {
             .args(args)
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
             .run()?;
-        if command.success() {
-            Ok(Self::new(&self.name)?)
+        brew_return(command, &self.name)
+    }
+
+    /// Pin forumla to prevent automatic updates/upgrades.
+    pub fn pin(&self) -> Result<Package> {
+        if !self.pinned {
+            let command = Single::new("brew")
+                .arg("pin")
+                .arg(&self.name)
+                .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+                .run()?;
+            brew_return(command, &self.name)
         } else {
-            test_brew_installed()?;
-            Err(Error::UnknownError(command.stderr().to_owned()))
+            Ok(self.clone())
+        }
+    }
+
+    /// Unpin formula to allow automatic updates/upgrades.
+    pub fn unpin(&self) -> Result<Package> {
+        if self.pinned {
+            let command = Single::new("brew")
+                .arg("unpin")
+                .arg(&self.name)
+                .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+                .run()?;
+            brew_return(command, &self.name)
+        } else {
+            Ok(self.clone())
         }
     }
 }
@@ -294,14 +326,14 @@ pub fn all_packages() -> Result<HashMap<String, Package>> {
     packages("--all")
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Analytics {
     pub install: Analytic,
     pub install_on_request: Analytic,
     pub build_error: Analytic,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Analytic {
     #[serde(rename = "30d")]
     d30: Option<HashMap<String, usize>>,
@@ -311,7 +343,7 @@ pub struct Analytic {
     d365: Option<HashMap<String, usize>>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Versions {
     pub stable: VersionResult,
     pub devel: Option<VersionResult>,
@@ -319,7 +351,7 @@ pub struct Versions {
     pub bottle: bool,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Bottle {
     pub rebuild: usize,
     pub cellar: String,
@@ -328,20 +360,20 @@ pub struct Bottle {
     pub files: HashMap<String, File>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct File {
     pub url: String,
     pub sha256: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Url {
     pub url: String,
     pub tag: Option<String>,
     pub revision: Option<NumOrString>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Installed {
     pub version: VersionResult,
     pub used_options: Vec<String>,
@@ -352,7 +384,7 @@ pub struct Installed {
     pub installed_on_request: bool,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Dependency {
     pub full_name: String,
     pub version: VersionResult,
