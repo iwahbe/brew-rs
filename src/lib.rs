@@ -238,7 +238,7 @@ impl Package {
             .map(|i: &Installed| i.used_options.as_slice())
     }
 
-    /// uninstalls the package.
+    /// Uninstalls the package.
     pub fn uninstall(&self, force: bool, ignore_dependencies: bool) -> Result<Package> {
         let mut args = vec!["uninstall", &self.name];
         if force {
@@ -281,6 +281,20 @@ impl Package {
             Ok(self.clone())
         }
     }
+
+    /// Upgrade formula.
+    pub fn upgrade(&self) -> Result<Package> {
+        if self.is_installed() {
+            let command = Single::new("brew")
+                .arg("upgrade")
+                .arg(&self.name)
+                .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+                .run()?;
+            brew_return(command, &self.name)
+        } else {
+            Err(Error::NotInstalled)
+        }
+    }
 }
 
 /// Update homebrew, synchronizing the homebrew-core and package list.
@@ -295,8 +309,6 @@ pub fn update() -> Result<()> {
 }
 
 /// Return a map of all installed packages.
-/// This is equivalent to
-/// `$ brew info --installed`
 pub fn all_installed() -> Result<HashMap<String, Package>> {
     packages("--installed")
 }
@@ -320,8 +332,6 @@ fn packages(arg: &str) -> Result<HashMap<String, Package>> {
 }
 
 /// Returns a map of all packages in the downloaded homebrew repository.
-/// This is equivalent to
-/// `$ brew info --all`
 pub fn all_packages() -> Result<HashMap<String, Package>> {
     packages("--all")
 }
@@ -410,14 +420,16 @@ pub fn test_brew_installed() -> Result<()> {
 
 /// WARNING: untested
 /// installs the homebrew cli in "usr/local" which is it's recomended install location.
-pub fn install_homebrew() -> Result<()> {
+#[allow(dead_code)]
+fn install_homebrew() -> Result<()> {
     install_homebrew_at("/usr/local")
 }
 
 /// WARNING: untested
 /// TODO: Test this function
 /// installs the homebrew cli in `dir`.
-pub fn install_homebrew_at(dir: &str) -> Result<()> {
+#[allow(dead_code)]
+fn install_homebrew_at(dir: &str) -> Result<()> {
     Single::new("mkdir")
         .arg("homebrew")
         .and(
