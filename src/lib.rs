@@ -157,10 +157,10 @@ impl Package {
     /// Creates package, filling out struct from the command line toole.
     pub fn new(name: &str) -> Result<Package> {
         let output = Single::new("/usr/local/bin/brew")
-            .a("info")
-            .a(name)
-            .a("--json=v1")
-            .a("--analytics")
+            .arg("info")
+            .arg(name)
+            .arg("--json=v1")
+            .arg("--analytics")
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
             .run()?;
         if output.success() {
@@ -179,7 +179,7 @@ impl Package {
     /// Attempts to install a package, reinstalling a package if it is already installed.
     pub fn install(&self, options: &Options) -> Result<Package> {
         let command = Single::new("brew")
-            .a(if self.is_installed() && options.force {
+            .arg(if self.is_installed() && options.force {
                 "reinstall"
             } else if self.is_installed() {
                 let opts = self.install_options().unwrap();
@@ -192,7 +192,7 @@ impl Package {
                 "install"
             })
             .args(options.brew_options().as_slice())
-            .a(&self.name)
+            .arg(&self.name)
             .args(
                 &options
                     .package_options()
@@ -231,15 +231,15 @@ impl Package {
 
     /// uninstalls the package.
     pub fn uninstall(&self, force: bool, ignore_dependencies: bool) -> Result<Package> {
+        let mut args = vec!["uninstall", &self.name];
+        if force {
+            args.push("--force");
+        }
+        if ignore_dependencies {
+            args.push("--ignore-dependencies");
+        }
         let command = Single::new("brew")
-            .a("uninstall")
-            .a(&self.name)
-            .args(if force { &["--force"] } else { &[] })
-            .args(if ignore_dependencies {
-                &["--ignore-dependencies"]
-            } else {
-                &[]
-            })
+            .args(args)
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
             .run()?;
         if command.success() {
@@ -253,7 +253,7 @@ impl Package {
 
 /// Update homebrew, synchronizing the homebrew-core and package list.
 pub fn update() -> Result<()> {
-    let command = Single::new("brew").a("update").run()?;
+    let command = Single::new("brew").arg("update").run()?;
     if command.success() {
         Ok(())
     } else {
@@ -272,10 +272,10 @@ pub fn all_installed() -> Result<HashMap<String, Package>> {
 /// For internal use, wrapper to get package info.
 fn packages(arg: &str) -> Result<HashMap<String, Package>> {
     let output = Single::new("brew")
-        .a("info")
-        .a("--json=v1")
-        .a(arg)
-        .a("--analytics")
+        .arg("info")
+        .arg("--json=v1")
+        .arg(arg)
+        .arg("--analytics")
         .env("HOMEBREW_NO_AUTO_UPDATE", "1")
         .run()?;
     if output.success() {
@@ -364,7 +364,7 @@ type VersionResult = Version;
 /// successfully.
 pub fn test_brew_installed() -> Result<()> {
     if Single::new("brew")
-        .a("--version")
+        .arg("--version")
         .env("HOMEBREW_NO_AUTO_UPDATE", "1")
         .run()
         .map(|o| o.success())
@@ -387,19 +387,19 @@ pub fn install_homebrew() -> Result<()> {
 /// installs the homebrew cli in `dir`.
 pub fn install_homebrew_at(dir: &str) -> Result<()> {
     Single::new("mkdir")
-        .a("homebrew")
+        .arg("homebrew")
         .and(
             Single::new("curl")
-                .a("-L")
-                .a("https://github.com/Homebrew/brew/tarball/master"),
+                .arg("-L")
+                .arg("https://github.com/Homebrew/brew/tarball/master"),
         )
         .pipe(
             Single::new("tar")
-                .a("xz")
-                .a("--strip")
-                .a("1")
-                .a("-C")
-                .a("homebrew"),
+                .arg("xz")
+                .arg("--strip")
+                .arg("1")
+                .arg("-C")
+                .arg("homebrew"),
         )
         .with_dir(dir)
         .run()?;
