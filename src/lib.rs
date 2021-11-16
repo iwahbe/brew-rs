@@ -1,35 +1,7 @@
-#[cfg(test)]
-mod tests {
-    use crate::*;
-
-    #[test]
-    fn test_brew_install_test() {
-        assert!(matches!(test_brew_installed(), Ok(())));
-    }
-
-    #[test]
-    fn get_info() {
-        let exa = Package::new("exa").unwrap();
-        assert_eq!(exa.name, "exa");
-        assert_eq!(exa.desc.unwrap(), "Modern replacement for 'ls'");
-        assert!(
-            exa.versions.stable.parse().unwrap() >= version_rs::Version::from((0 as u32, 9 as u32))
-        );
-    }
-
-    #[test]
-    fn look_at_everything() {
-        all_installed().unwrap();
-        all_packages().unwrap();
-    }
-}
-
 use command_builder::{Command, Single};
-use serde::{Deserialize, Serialize};
-use serde_json;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
-use version_rs;
 
 fn brew_return(command: command_builder::Output, name: &str) -> Result<Package> {
     if command.success() {
@@ -40,10 +12,10 @@ fn brew_return(command: command_builder::Output, name: &str) -> Result<Package> 
     }
 }
 
-/// Represents a string which might be a version number for homebrew.
-/// Homebrew has requirments for version strings, so it is not possable
-/// to definitivly parse it.
-#[derive(Serialize, Deserialize, Clone)]
+/// Represents a string which might be a version number for Homebrew.
+/// Homebrew has requirements for version strings, so it is not possible
+/// to definitively parse it.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(transparent)]
 pub struct Version {
     original: String,
@@ -61,8 +33,8 @@ impl Version {
     }
 }
 
-/// Represents a homebrew package, which may or may not be installed.
-#[derive(Deserialize, Serialize, Clone)]
+/// Represents a Homebrew package, which may or may not be installed.
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Package {
     pub name: String,
     pub full_name: String,
@@ -93,7 +65,7 @@ pub struct Package {
     pub analytics: Option<Analytics>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum MapOrString {
     MapStringString(HashMap<String, String>),
@@ -101,14 +73,14 @@ pub enum MapOrString {
     MapStringVecString(HashMap<String, Vec<String>>),
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum NumOrString {
     Num(u32),
     String(String),
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Requirment {
     name: String,
     cask: Option<String>,
@@ -117,7 +89,7 @@ pub struct Requirment {
     contexts: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct BrewOption {
     option: String,
     description: String,
@@ -159,7 +131,7 @@ where
             return false;
         }
     }
-    return true;
+    true
 }
 
 impl Package {
@@ -169,7 +141,6 @@ impl Package {
             .arg("info")
             .arg(name)
             .arg("--json=v1")
-            .arg("--analytics")
             .env("HOMEBREW_NO_AUTO_UPDATE", "1")
             .run()?;
         if output.success() {
@@ -177,7 +148,7 @@ impl Package {
             packages
                 .into_iter()
                 .next()
-                .map(|p| Ok(p))
+                .map(Result::Ok)
                 .unwrap_or(Err(Error::PackageNotFound))
         } else {
             test_brew_installed()?;
@@ -205,7 +176,7 @@ impl Package {
             .args(
                 &options
                     .package_options()
-                    .into_iter()
+                    .iter()
                     .map(|f| f.as_str())
                     .collect::<Vec<_>>(),
             )
@@ -228,7 +199,7 @@ impl Package {
 
     /// Check if a package is installed.
     pub fn is_installed(&self) -> bool {
-        self.installed.len() != 0
+        !self.installed.is_empty()
     }
 
     /// The package options that the package was installed with.
@@ -319,7 +290,6 @@ fn packages(arg: &str) -> Result<HashMap<String, Package>> {
         .arg("info")
         .arg("--json=v1")
         .arg(arg)
-        .arg("--analytics")
         .env("HOMEBREW_NO_AUTO_UPDATE", "1")
         .run()?;
     if output.success() {
@@ -336,14 +306,14 @@ pub fn all_packages() -> Result<HashMap<String, Package>> {
     packages("--all")
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Analytics {
     pub install: Analytic,
     pub install_on_request: Analytic,
     pub build_error: Analytic,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Analytic {
     #[serde(rename = "30d")]
     d30: Option<HashMap<String, usize>>,
@@ -353,7 +323,7 @@ pub struct Analytic {
     d365: Option<HashMap<String, usize>>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Versions {
     pub stable: VersionResult,
     pub devel: Option<VersionResult>,
@@ -361,40 +331,48 @@ pub struct Versions {
     pub bottle: bool,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Bottle {
     pub rebuild: usize,
-    pub cellar: String,
-    pub prefix: String,
+    pub cellar: Option<String>,
+    pub prefix: Option<String>,
     pub root_url: String,
     pub files: HashMap<String, File>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct File {
     pub url: String,
     pub sha256: String,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Url {
     pub url: String,
     pub tag: Option<String>,
     pub revision: Option<NumOrString>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Installed {
     pub version: VersionResult,
     pub used_options: Vec<String>,
     pub built_as_bottle: bool,
     pub poured_from_bottle: bool,
+    #[serde(deserialize_with = "parse_null_as_empty_vec")]
     pub runtime_dependencies: Vec<Dependency>,
     pub installed_as_dependency: bool,
     pub installed_on_request: bool,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+fn parse_null_as_empty_vec<'de, D>(d: D) -> std::result::Result<Vec<Dependency>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(d).map(|v: Option<_>| v.unwrap_or_default())
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Dependency {
     pub full_name: String,
     pub version: VersionResult,
@@ -452,7 +430,7 @@ fn install_homebrew_at(dir: &str) -> Result<()> {
 }
 
 /// Represents command line options with which to install a package.
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct Options {
     env: BuildEnv,
     ignore_dependencies: bool,
@@ -473,22 +451,7 @@ pub struct Options {
 impl Options {
     /// Represents no options added.
     pub fn new() -> Self {
-        Self {
-            env: BuildEnv::None,
-            ignore_dependencies: false,
-            only_dependencies: false,
-            build_from_source: false,
-            include_test: false,
-            force_bottle: false,
-            devel: false,
-            head: false,
-            keep_tmp: false,
-            build_bottle: false,
-            bottle_arch: false,
-            force: false,
-            git: false,
-            package_options: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Adds the `--env=std` option.
@@ -634,9 +597,45 @@ impl Options {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum BuildEnv {
     Std,
     Super,
     None,
+}
+
+impl Default for BuildEnv {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_brew_install_test() {
+        assert!(matches!(crate::test_brew_installed(), Ok(())));
+    }
+
+    #[test]
+    fn get_info() {
+        use crate::Package;
+        let exa = Package::new("exa").unwrap();
+        assert_eq!(exa.name, "exa");
+        assert_eq!(exa.desc.unwrap(), "Modern replacement for 'ls'");
+        assert!(
+            exa.versions.stable.parse().unwrap() >= version_rs::Version::from((0 as u32, 9 as u32))
+        );
+    }
+
+    #[test]
+    fn all_installed() {
+        crate::all_installed().unwrap();
+    }
+    #[test]
+
+    fn all_packages() {
+        crate::all_packages().unwrap();
+    }
 }

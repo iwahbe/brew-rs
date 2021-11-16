@@ -1,3 +1,8 @@
+# Warning
+This crate is not maintained. You are free to use it and file bugs/PRs, but I may not respond
+quickly. If you are interested in taking over the cargo crate or the name, feel free to file an
+issue.
+
 # brew-rs
 
 A rust interface to the Homebrew command line app. 
